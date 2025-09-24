@@ -32,6 +32,15 @@ data_dict = {
     "mp_doc": MP_DOC,
     "clevr_mc": CLEVR_MC,
     "videochatgpt": VIDEOCHATGPT,
+    # MS COCO 2017 captions datasets
+    "mscoco2017_train_captions": {
+        "annotation_path": "/mnt/local_storage/data/mscoco2017/annotations/coco2017_train_qwen.json",
+        "data_path": "/mnt/local_storage/data/mscoco2017",
+    },
+    "mscoco2017_val_captions": {
+        "annotation_path": "/mnt/local_storage/data/mscoco2017/annotations/coco2017_val_qwen.json",
+        "data_path": "/mnt/local_storage/data/mscoco2017",
+    },
 }
 
 

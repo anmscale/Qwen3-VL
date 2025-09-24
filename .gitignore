@@ -1,0 +1,53 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Python cache/build
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+build/
+dist/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environments
+.env
+.env.*
+.venv/
+venv/
+env/
+
+# IDE/editor
+.vscode/
+.idea/
+.history/
+
+# Logs & tracking
+*.log
+logs/
+wandb/
+deepspeed_logs/
+
+# Caches
+.cache/
+cache/
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+
+# Training artifacts
+qwen-vl-finetune/output/
+qwen-vl-finetune/checkpoints/
+
+# Generated annotation helpers
+*_pack.json
+*_count.json
+
+
