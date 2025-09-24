@@ -18,8 +18,21 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from PIL import Image
-from decord import VideoReader
-from torchcodec.decoders import VideoDecoder
+
+# Optional video backends: decord and torchcodec
+try:
+    from decord import VideoReader  # type: ignore
+    DECORD_AVAILABLE = True
+except Exception:
+    VideoReader = None  # type: ignore
+    DECORD_AVAILABLE = False
+
+try:
+    from torchcodec.decoders import VideoDecoder  # type: ignore
+    TORCHCODEC_AVAILABLE = True
+except Exception:
+    VideoDecoder = None  # type: ignore
+    TORCHCODEC_AVAILABLE = False
 import transformers
 
 from . import data_list
@@ -242,27 +255,34 @@ class LazySupervisedDataset(Dataset):
         return image_tensor, grid_thw
 
     def process_video(self, video_file):
-        decord_video = None
-        decord_attempts = 0
-        max_decord_attempts = 3
-        while decord_attempts < max_decord_attempts:
-            try:
-                decord_video = self.video_decord(video_file)
-                return decord_video
-                if decord_video:
-                    break
-            except Exception as e:
-                print(f"Decord attempt {decord_attempts + 1} failed: {e}")
-                decord_attempts += 1
+        # Prefer decord if available
+        if DECORD_AVAILABLE:
+            decord_attempts = 0
+            max_decord_attempts = 3
+            while decord_attempts < max_decord_attempts:
+                try:
+                    decord_video = self.video_decord(video_file)
+                    return decord_video
+                except Exception as e:
+                    print(f"Decord attempt {decord_attempts + 1} failed: {e}")
+                    decord_attempts += 1
 
-        torchcodec_video = None
-        try:
-            torchcodec_video = self.video_torchcodec(video_file)
-            return torchcodec_video
-        except Exception as e:
-            print(f"torchcodec attempt failed: {e}")
+        # Fallback to torchcodec if installed
+        if TORCHCODEC_AVAILABLE:
+            try:
+                torchcodec_video = self.video_torchcodec(video_file)
+                return torchcodec_video
+            except Exception as e:
+                print(f"torchcodec attempt failed: {e}")
+
+        # If neither backend is usable
+        raise RuntimeError(
+            "No usable video backend available. Install decord or torchcodec, or use image-only datasets."
+        )
 
     def video_decord(self, video_file):
+        if not DECORD_AVAILABLE:
+            raise RuntimeError("decord is not available")
         if not os.path.exists(video_file):
             print(f"File not exist: {video_file}")
         vr = VideoReader(video_file, num_threads=4)
@@ -284,6 +304,8 @@ class LazySupervisedDataset(Dataset):
         return self.process_video_frames(video, frame_idx, video_length)
 
     def video_torchcodec(self, video_file):
+        if not TORCHCODEC_AVAILABLE:
+            raise RuntimeError("torchcodec is not available")
         device = "cpu"  # or e.g. "cuda"
         decoder = VideoDecoder(video_file, device=device)
         total_frames = decoder.metadata.num_frames
