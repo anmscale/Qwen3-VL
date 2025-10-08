@@ -196,6 +196,7 @@ class LazySupervisedDataset(Dataset):
 
         rank0_print(f"Total training samples: {len(list_data_dict)}")
 
+        random.seed(42)  # Fixed seed for reproducibility
         random.shuffle(list_data_dict)  # Randomly shuffle the data for training
 
         rank0_print("Formatting inputs...Skip in lazy mode")
