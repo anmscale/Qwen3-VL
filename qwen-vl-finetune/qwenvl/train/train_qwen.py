@@ -30,9 +30,18 @@ from trainer import replace_qwen2_vl_attention_class
 from transformers import (
     Qwen2VLForConditionalGeneration,
     Qwen2_5_VLForConditionalGeneration,
-    Qwen3VLForConditionalGeneration,
-    Qwen3VLMoeForConditionalGeneration
 )
+
+try:
+    from transformers import (
+        Qwen3VLForConditionalGeneration,
+        Qwen3VLMoeForConditionalGeneration
+    )
+    QWEN3_VL_AVAILABLE = True
+except ImportError:
+    QWEN3_VL_AVAILABLE = False
+    Qwen3VLForConditionalGeneration = None
+    Qwen3VLMoeForConditionalGeneration = None
 from qwenvl.data.data_processor import make_supervised_data_module
 from qwenvl.train.argument import (
     ModelArguments,
@@ -47,6 +56,34 @@ local_rank = None
 def rank0_print(*args):
     if local_rank == 0:
         print(*args)
+
+
+class QwenVLTrainer(Trainer):
+    """Custom Trainer with additional logging for input shapes"""
+    
+    def training_step(self, model, inputs, num_items_in_batch=None):
+        """
+        Override training step to log input shapes before forward pass
+        """
+        # Log shapes on rank 0 only
+        if self.args.local_rank in [-1, 0]:
+            input_ids = inputs.get('input_ids')
+            pixel_values = inputs.get('pixel_values')
+            image_grid_thw = inputs.get('image_grid_thw')
+            attention_mask = inputs.get('attention_mask')
+            
+            log_parts = []
+            log_parts.append(f"input_ids={tuple(input_ids.shape) if input_ids is not None else None}")
+            if pixel_values is not None:
+                log_parts.append(f"pixel_values={tuple(pixel_values.shape)}")
+            if image_grid_thw is not None:
+                log_parts.append(f"image_grid_thw={tuple(image_grid_thw.shape)}")
+            if attention_mask is not None:
+                log_parts.append(f"attention_mask={tuple(attention_mask.shape)}")
+            print(", ".join(log_parts))
+        
+        # Call parent training_step
+        return super().training_step(model, inputs, num_items_in_batch)
 
 
 def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: str):
@@ -101,6 +138,11 @@ def train(attn_implementation="flash_attention_2"):
     os.makedirs(training_args.output_dir, exist_ok=True)
 
     if "qwen3" in model_args.model_name_or_path.lower() and "moe" in model_args.model_name_or_path.lower():
+        if not QWEN3_VL_AVAILABLE:
+            raise ImportError(
+                "Qwen3VL models are not available in your transformers version. "
+                "Please upgrade transformers to use Qwen3VL models."
+            )
         model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
             model_args.model_name_or_path,
             cache_dir=training_args.cache_dir,
@@ -109,6 +151,11 @@ def train(attn_implementation="flash_attention_2"):
         )
         data_args.model_type = "qwen3vl"
     elif "qwen3" in model_args.model_name_or_path.lower():
+        if not QWEN3_VL_AVAILABLE:
+            raise ImportError(
+                "Qwen3VL models are not available in your transformers version. "
+                "Please upgrade transformers to use Qwen3VL models."
+            )
         model = Qwen3VLForConditionalGeneration.from_pretrained(
             model_args.model_name_or_path,
             cache_dir=training_args.cache_dir,
@@ -166,8 +213,11 @@ def train(attn_implementation="flash_attention_2"):
         model.model.print_trainable_parameters()
     
     data_module = make_supervised_data_module(processor, data_args=data_args)
-    trainer = Trainer(
-        model=model, processing_class=tokenizer, args=training_args, **data_module
+    trainer = QwenVLTrainer(
+        model=model, 
+        processing_class=tokenizer, 
+        args=training_args, 
+        **data_module
     )
 
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):

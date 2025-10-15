@@ -4,7 +4,7 @@
 # Distributed training configuration
 MASTER_ADDR=${MASTER_ADDR:-"127.0.0.1"}
 MASTER_PORT=${MASTER_PORT:-$(shuf -i 20001-29999 -n 1)}
-NPROC_PER_NODE=8
+NPROC_PER_NODE=4
 
 # DeepSpeed configuration
 deepspeed=./scripts/zero3.json
@@ -14,7 +14,7 @@ llm=Qwen/Qwen2.5-VL-7B-Instruct  # Using HuggingFace model ID
 
 # Training hyperparameters
 lr=2e-7
-batch_size=32
+batch_size=4
 grad_accum_steps=1
 
 # Training entry point
@@ -46,9 +46,7 @@ args="
     --max_pixels 50176 \
     --min_pixels 784 \
     --eval_strategy no \
-    --save_strategy steps \
-    --save_steps 1000 \
-    --save_total_limit 1 \
+    --save_strategy no \
     --learning_rate ${lr} \
     --weight_decay 0 \
     --warmup_ratio 0.03 \

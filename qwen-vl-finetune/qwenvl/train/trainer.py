@@ -16,15 +16,19 @@ from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
     Qwen2_5_VisionTransformerPretrainedModel,
     Qwen2_5_VLModel,
 )
-from transformers.models.qwen3_vl.modeling_qwen3_vl import (
-    Qwen3VLVisionModel,
-    Qwen3VLModel,
-    apply_rotary_pos_emb,
-)
-from transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe import (
-    Qwen3VLMoeVisionModel,
-    Qwen3VLMoeModel,
-)
+try:
+    from transformers.models.qwen3_vl.modeling_qwen3_vl import (
+        Qwen3VLVisionModel,
+        Qwen3VLModel,
+        apply_rotary_pos_emb,
+    )
+    from transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe import (
+        Qwen3VLMoeVisionModel,
+        Qwen3VLMoeModel,
+    )
+    QWEN3_VL_AVAILABLE = True
+except ImportError:
+    QWEN3_VL_AVAILABLE = False
 from transformers.utils import logging
 
 logger = logging.get_logger(__name__)
@@ -237,19 +241,20 @@ def replace_qwen2_vl_attention_class():
         return_mask
     )
     ## qwen3vl
-    transformers.models.qwen3_vl.modeling_qwen3_vl.Qwen3VLTextAttention.forward = (
-        qwen3vl_forward
-    )
-    transformers.models.qwen3_vl.modeling_qwen3_vl.create_causal_mask = (
-        return_mask
-    )
-    ## qwen3vl moe
-    transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe.Qwen3VLMoeTextAttention.forward = (
-        qwen3vl_forward
-    )
-    transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe.create_causal_mask = (
-        return_mask
-    )
+    if QWEN3_VL_AVAILABLE:
+        transformers.models.qwen3_vl.modeling_qwen3_vl.Qwen3VLTextAttention.forward = (
+            qwen3vl_forward
+        )
+        transformers.models.qwen3_vl.modeling_qwen3_vl.create_causal_mask = (
+            return_mask
+        )
+        ## qwen3vl moe
+        transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe.Qwen3VLMoeTextAttention.forward = (
+            qwen3vl_forward
+        )
+        transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe.create_causal_mask = (
+            return_mask
+        )
 
 
 def print_trainable_parameters_visual(self) -> None:
@@ -503,9 +508,10 @@ Qwen2_5_VisionTransformerPretrainedModel.print_trainable_parameters = (
 )
 Qwen2_5_VLModel.print_trainable_parameters = print_trainable_parameters
 
-Qwen3VLVisionModel.print_trainable_parameters = (
-    print_trainable_parameters_visual
-)
-Qwen3VLModel.print_trainable_parameters = print_trainable_parameters
-Qwen3VLMoeVisionModel.print_trainable_parameters = print_trainable_parameters_visual
-Qwen3VLMoeModel.print_trainable_parameters = print_trainable_parameters
+if QWEN3_VL_AVAILABLE:
+    Qwen3VLVisionModel.print_trainable_parameters = (
+        print_trainable_parameters_visual
+    )
+    Qwen3VLModel.print_trainable_parameters = print_trainable_parameters
+    Qwen3VLMoeVisionModel.print_trainable_parameters = print_trainable_parameters_visual
+    Qwen3VLMoeModel.print_trainable_parameters = print_trainable_parameters

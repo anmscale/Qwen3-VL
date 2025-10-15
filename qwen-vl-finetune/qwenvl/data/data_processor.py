@@ -246,6 +246,8 @@ class LazySupervisedDataset(Dataset):
 
     def __init__(self, processor, data_args):
         super(LazySupervisedDataset, self).__init__()
+        # Use fixed seed for reproducibility)
+        random.seed(42)
 
         dataset = data_args.dataset_use.split(",")
         dataset_list = data_list(dataset)
