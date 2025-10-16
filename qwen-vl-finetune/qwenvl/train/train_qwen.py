@@ -30,6 +30,7 @@ from trainer import replace_qwen2_vl_attention_class
 from transformers import (
     Qwen2VLForConditionalGeneration,
     Qwen2_5_VLForConditionalGeneration,
+    AutoConfig,
 )
 
 try:
@@ -101,6 +102,20 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
         trainer._save(output_dir, state_dict=cpu_state_dict)  # noqa
 
 
+def configure_attention_backend(config, backend):
+    """Configure attention implementation for vision and text configs"""
+    def _set_backend(sub_config):
+        if sub_config is None:
+            return
+        if hasattr(sub_config, "attn_implementation"):
+            sub_config.attn_implementation = backend
+        if hasattr(sub_config, "_attn_implementation"):
+            sub_config._attn_implementation = backend
+    
+    _set_backend(getattr(config, "vision_config", None))
+    _set_backend(getattr(config, "text_config", None))
+
+
 def set_model(model_args, model):
     if model_args.tune_mm_vision:
         for n, p in model.visual.named_parameters():
@@ -164,12 +179,16 @@ def train(attn_implementation="flash_attention_2"):
         )
         data_args.model_type = "qwen3vl"
     elif "qwen2.5" in model_args.model_name_or_path.lower():
-        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        # Load config only, then initialize with random weights
+        config = AutoConfig.from_pretrained(
             model_args.model_name_or_path,
             cache_dir=training_args.cache_dir,
-            attn_implementation=attn_implementation,
-            dtype=(torch.bfloat16 if training_args.bf16 else None),
         )
+        # Configure attention backend on sub-configs
+        configure_attention_backend(config, attn_implementation)
+        model = Qwen2_5_VLForConditionalGeneration(config)
+        if training_args.bf16:
+            model = model.to(torch.bfloat16)
         data_args.model_type = "qwen2.5vl"
     else:
         model = Qwen2VLForConditionalGeneration.from_pretrained(
@@ -213,7 +232,8 @@ def train(attn_implementation="flash_attention_2"):
         model.model.print_trainable_parameters()
     
     data_module = make_supervised_data_module(processor, data_args=data_args)
-    trainer = QwenVLTrainer(
+    # Use QwenVLTrainer if you want to override trainer functions
+    trainer = Trainer(
         model=model, 
         processing_class=tokenizer, 
         args=training_args, 

@@ -13,8 +13,8 @@ deepspeed=./scripts/zero3.json
 llm=Qwen/Qwen2.5-VL-7B-Instruct  # Using HuggingFace model ID
 
 # Training hyperparameters
-lr=2e-7
-batch_size=4
+lr=2e-5
+batch_size=32
 grad_accum_steps=1
 
 # Training entry point
@@ -22,7 +22,7 @@ entry_file=qwenvl/train/train_qwen.py
 
 
 # Dataset configuration
-datasets=mscoco2017_val_captions
+datasets=mscoco2017_train_captions
 
 # Output configuration
 run_name="qwen2vl-coco"
@@ -39,7 +39,7 @@ args="
     --tune_mm_llm True \
     --bf16 \
     --output_dir ${output_dir} \
-    --num_train_epochs 0.5 \
+    --num_train_epochs 1 \
     --per_device_train_batch_size ${batch_size} \
     --per_device_eval_batch_size $((batch_size*2)) \
     --gradient_accumulation_steps ${grad_accum_steps} \
