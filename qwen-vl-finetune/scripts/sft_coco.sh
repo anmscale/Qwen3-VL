@@ -13,8 +13,8 @@ deepspeed=./scripts/zero3.json
 llm=Qwen/Qwen2.5-VL-7B-Instruct  # Using HuggingFace model ID
 
 # Training hyperparameters
-lr=2e-5
-batch_size=32
+lr=5e-5
+batch_size=4
 grad_accum_steps=1
 
 # Training entry point
@@ -31,6 +31,7 @@ output_dir=/mnt/local_storage/qwen-vl-finetune/checkpoints/
 # Training arguments
 args="
     --deepspeed ${deepspeed} \
+    --seed 42 \
     --model_name_or_path ${llm} \
     --dataset_use ${datasets} \
     --data_flatten True \
@@ -39,7 +40,7 @@ args="
     --tune_mm_llm True \
     --bf16 \
     --output_dir ${output_dir} \
-    --num_train_epochs 1 \
+    --max_steps 100 \
     --per_device_train_batch_size ${batch_size} \
     --per_device_eval_batch_size $((batch_size*2)) \
     --gradient_accumulation_steps ${grad_accum_steps} \
@@ -49,13 +50,12 @@ args="
     --save_strategy no \
     --learning_rate ${lr} \
     --weight_decay 0 \
-    --warmup_ratio 0.03 \
-    --max_grad_norm 1 \
-    --lr_scheduler_type cosine \
+    --warmup_ratio 0.0 \
+    --lr_scheduler_type constant \
     --logging_steps 1 \
     --model_max_length 8192 \
-    --gradient_checkpointing True \
-    --dataloader_num_workers 4 \
+    --gradient_checkpointing False \
+    --dataloader_num_workers 0 \
     --run_name ${run_name} \
     --report_to none"
 
