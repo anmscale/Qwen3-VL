@@ -3,6 +3,7 @@
 # Sweep script to run training with different vision token configurations
 # This script will iterate through different max_pixels/min_pixels settings
 # and save logs for each run to the logs/ directory
+# Each run will execute for a limited number of steps (controlled by max_steps variable)
 
 set -e  # Exit on error (can be commented out if you want to continue after failures)
 
@@ -34,6 +35,8 @@ llm=Qwen/Qwen2.5-VL-32B-Instruct
 lr=2e-7
 batch_size=1
 grad_accum_steps=1
+max_steps=10  # Number of training steps to run for each configuration
+warmup_steps=3  # Number of warmup steps
 
 # Training entry point
 entry_file=qwenvl/train/train_qwen.py
@@ -52,9 +55,9 @@ CONFIGS=(
     "2k_tokens:401408:401408:8192:0"
     "4k_tokens:802816:802816:8192:0"
     "8k_tokens:1605632:1605632:8192:0"
-    "16k_tokens:3211264:3211264:8192:0"  # Marked to skip due to OOM on 32B
-    "32k_tokens:6422528:6422528:16384:0"
-    "64k_tokens:12845056:12845056:32768:0"
+    "16k_tokens:3211264:3211264:8192:0" # OOM
+    "32k_tokens:6422528:6422528:16384:1" # Skip (OOM)
+    "64k_tokens:12845056:12845056:32768:1" # Skip (OOM)
 )
 
 # Color codes for output
@@ -89,6 +92,8 @@ for config in "${CONFIGS[@]}"; do
     echo "  max_pixels: ${max_pixels}"
     echo "  min_pixels: ${min_pixels}"
     echo "  model_max_length: ${model_max_length}"
+    echo "  max_steps: ${max_steps}"
+    echo "  warmup_steps: ${warmup_steps}"
     echo "  Started at: $(date)"
     echo "=========================================="
 
@@ -113,7 +118,7 @@ for config in "${CONFIGS[@]}"; do
         --tune_mm_llm True \
         --bf16 \
         --output_dir ${output_dir} \
-        --num_train_epochs 0.5 \
+        --max_steps ${max_steps} \
         --per_device_train_batch_size ${batch_size} \
         --per_device_eval_batch_size $((batch_size*2)) \
         --gradient_accumulation_steps ${grad_accum_steps} \
@@ -124,7 +129,7 @@ for config in "${CONFIGS[@]}"; do
         --save_strategy no \
         --learning_rate ${lr} \
         --weight_decay 0 \
-        --warmup_ratio 0.03 \
+        --warmup_steps ${warmup_steps} \
         --max_grad_norm 1 \
         --lr_scheduler_type cosine \
         --logging_steps 1 \
@@ -139,6 +144,8 @@ for config in "${CONFIGS[@]}"; do
     echo "max_pixels: ${max_pixels}" >> ${log_file}
     echo "min_pixels: ${min_pixels}" >> ${log_file}
     echo "model_max_length: ${model_max_length}" >> ${log_file}
+    echo "max_steps: ${max_steps}" >> ${log_file}
+    echo "warmup_steps: ${warmup_steps}" >> ${log_file}
     echo "output_dir: ${output_dir}" >> ${log_file}
     echo "========================================" >> ${log_file}
     echo "" >> ${log_file}
@@ -153,15 +160,41 @@ for config in "${CONFIGS[@]}"; do
     exit_code=$?
     set -e  # Re-enable exit on error
 
+    # Extract accurate iteration timing from the training script output
+    avg_iter_time="N/A"
+    train_steps_per_sec="N/A"
+    min_iter_time="N/A"
+    max_iter_time="N/A"
+
+    # Look for the accurate timing statistics printed by QwenVLTrainer
+    if grep -q "ACCURATE ITERATION TIMING STATISTICS" ${log_file}; then
+        # Extract average iteration time (excluding warmup)
+        avg_iter_time=$(grep "Average iteration time (excluding warmup):" ${log_file} | tail -1 | grep -oP '\K[0-9.]+(?= seconds)')
+
+        # Extract steps per second
+        train_steps_per_sec=$(grep "Steps per second:" ${log_file} | tail -1 | grep -oP '\K[0-9.]+$')
+
+        # Extract min and max times
+        min_iter_time=$(grep "Min iteration time:" ${log_file} | tail -1 | grep -oP '\K[0-9.]+(?= seconds)')
+        max_iter_time=$(grep "Max iteration time:" ${log_file} | tail -1 | grep -oP '\K[0-9.]+(?= seconds)')
+    fi
+
     # Record completion time and status
     echo "" >> ${log_file}
     echo "========================================" >> ${log_file}
     echo "Completed at: $(date)" >> ${log_file}
     echo "Exit code: ${exit_code}" >> ${log_file}
+    echo "Extracted Timing Metrics:" >> ${log_file}
+    echo "  Average iteration time: ${avg_iter_time}s" >> ${log_file}
+    echo "  Steps per second: ${train_steps_per_sec}" >> ${log_file}
+    echo "  Min iteration time: ${min_iter_time}s" >> ${log_file}
+    echo "  Max iteration time: ${max_iter_time}s" >> ${log_file}
 
     # Check if training was successful
     if [ $exit_code -eq 0 ]; then
         echo -e "${GREEN}[SUCCESS]${NC} Configuration ${name} completed successfully"
+        echo "  Average iteration time (excl. warmup): ${avg_iter_time}s"
+        echo "  Steps per second: ${train_steps_per_sec}"
         echo "Status: SUCCESS" >> ${log_file}
         SUCCESSFUL_RUNS=$((SUCCESSFUL_RUNS + 1))
     else
@@ -191,6 +224,28 @@ echo -e "  ${GREEN}Successful: ${SUCCESSFUL_RUNS}${NC}"
 echo -e "  ${RED}Failed: ${FAILED_RUNS}${NC}"
 echo -e "  ${YELLOW}Skipped: ${SKIPPED_RUNS}${NC}"
 echo "=========================================="
+echo ""
+echo "Timing Results (excluding warmup steps):"
+echo "----------------------------------------"
+printf "%-15s | %-10s | %-20s | %-15s\n" "Configuration" "Status" "Avg Iter Time (s)" "Steps/Sec"
+echo "----------------------------------------"
+for config in "${CONFIGS[@]}"; do
+    IFS=':' read -r name max_pixels min_pixels model_max_length skip_flag <<< "$config"
+    if [ "$skip_flag" -eq 1 ]; then
+        printf "%-15s | %-10s | %-20s | %-15s\n" "$name" "SKIPPED" "N/A" "N/A"
+    elif [ -f "${SWEEP_LOG_DIR}/${name}.log" ]; then
+        # Extract accurate timing info from log (from Extracted Timing Metrics section)
+        avg_time=$(grep "Average iteration time:" "${SWEEP_LOG_DIR}/${name}.log" | tail -1 | grep -oP '\K[0-9.]+(?=s)' || echo "N/A")
+        steps_per_sec=$(grep "Steps per second:" "${SWEEP_LOG_DIR}/${name}.log" | tail -1 | awk '{print $NF}')
+
+        if grep -q "Status: SUCCESS" "${SWEEP_LOG_DIR}/${name}.log"; then
+            printf "%-15s | ${GREEN}%-10s${NC} | %-20s | %-15s\n" "$name" "SUCCESS" "${avg_time}" "$steps_per_sec"
+        else
+            printf "%-15s | ${RED}%-10s${NC} | %-20s | %-15s\n" "$name" "FAILED" "${avg_time}" "$steps_per_sec"
+        fi
+    fi
+done
+echo "=========================================="
 echo "All logs saved to: ${SWEEP_LOG_DIR}"
 
 # Create summary file
@@ -207,15 +262,21 @@ echo "Failed: ${FAILED_RUNS}" >> ${summary_file}
 echo "Skipped: ${SKIPPED_RUNS}" >> ${summary_file}
 echo "" >> ${summary_file}
 echo "Configurations:" >> ${summary_file}
+echo "Format: name | status | avg_iter_time (excl. warmup) | steps_per_sec" >> ${summary_file}
+echo "--------------------------------------------------------------" >> ${summary_file}
 for config in "${CONFIGS[@]}"; do
     IFS=':' read -r name max_pixels min_pixels model_max_length skip_flag <<< "$config"
     if [ "$skip_flag" -eq 1 ]; then
-        echo "  - ${name}: SKIPPED (OOM)" >> ${summary_file}
+        echo "  ${name}: SKIPPED (OOM)" >> ${summary_file}
     elif [ -f "${SWEEP_LOG_DIR}/${name}.log" ]; then
+        # Extract accurate timing info from log (from Extracted Timing Metrics section)
+        avg_time=$(grep "Average iteration time:" "${SWEEP_LOG_DIR}/${name}.log" | tail -1 | grep -oP '\K[0-9.]+(?=s)' || echo "N/A")
+        steps_per_sec=$(grep "Steps per second:" "${SWEEP_LOG_DIR}/${name}.log" | tail -1 | awk '{print $NF}')
+
         if grep -q "Status: SUCCESS" "${SWEEP_LOG_DIR}/${name}.log"; then
-            echo "  - ${name}: SUCCESS" >> ${summary_file}
+            echo "  ${name}: SUCCESS | ${avg_time}s | ${steps_per_sec} steps/s" >> ${summary_file}
         else
-            echo "  - ${name}: FAILED" >> ${summary_file}
+            echo "  ${name}: FAILED | ${avg_time}s | ${steps_per_sec} steps/s" >> ${summary_file}
         fi
     fi
 done

@@ -20,6 +20,7 @@ import pathlib
 import torch
 import transformers
 import sys
+import time
 from pathlib import Path
 
 project_root = Path(__file__).parent.parent.parent
@@ -59,19 +60,29 @@ def rank0_print(*args):
 
 
 class QwenVLTrainer(Trainer):
-    """Custom Trainer with additional logging for input shapes"""
-    
+    """Custom Trainer with additional logging for input shapes and accurate iteration timing"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.iteration_times = []
+        self.step_start_time = None
+
     def training_step(self, model, inputs, num_items_in_batch=None):
         """
-        Override training step to log input shapes before forward pass
+        Override training step to log input shapes and record accurate iteration time
         """
+        # Record start time for this iteration (after data loading)
+        if self.args.local_rank in [-1, 0]:
+            torch.cuda.synchronize()  # Ensure GPU operations are complete
+            self.step_start_time = time.time()
+
         # Log shapes on rank 0 only
         if self.args.local_rank in [-1, 0]:
             input_ids = inputs.get('input_ids')
             pixel_values = inputs.get('pixel_values')
             image_grid_thw = inputs.get('image_grid_thw')
             attention_mask = inputs.get('attention_mask')
-            
+
             log_parts = []
             log_parts.append(f"input_ids={tuple(input_ids.shape) if input_ids is not None else None}")
             if pixel_values is not None:
@@ -80,10 +91,68 @@ class QwenVLTrainer(Trainer):
                 log_parts.append(f"image_grid_thw={tuple(image_grid_thw.shape)}")
             if attention_mask is not None:
                 log_parts.append(f"attention_mask={tuple(attention_mask.shape)}")
-            print(", ".join(log_parts))
-        
+            # print(", ".join(log_parts))
+
         # Call parent training_step
-        return super().training_step(model, inputs, num_items_in_batch)
+        loss = super().training_step(model, inputs, num_items_in_batch)
+
+        # Record end time for this iteration (after backward pass and optimizer step)
+        if self.args.local_rank in [-1, 0]:
+            torch.cuda.synchronize()  # Ensure GPU operations are complete
+            step_end_time = time.time()
+            iteration_time = step_end_time - self.step_start_time
+            self.iteration_times.append(iteration_time)
+
+        return loss
+
+    def train(self, *args, **kwargs):
+        """Override train to print timing statistics after training completes"""
+        output = super().train(*args, **kwargs)
+
+        # Print timing statistics on rank 0 only
+        if self.args.local_rank in [-1, 0]:
+            self._print_timing_statistics()
+
+        return output
+
+    def _print_timing_statistics(self):
+        """Calculate and print accurate timing statistics, excluding warmup steps"""
+        if len(self.iteration_times) == 0:
+            rank0_print("No iteration times recorded.")
+            return
+
+        # Get warmup steps from training args
+        warmup_steps = self.args.warmup_steps if hasattr(self.args, 'warmup_steps') else 0
+
+        # Ensure we have enough steps
+        if len(self.iteration_times) <= warmup_steps:
+            rank0_print(f"Warning: Only {len(self.iteration_times)} steps completed, cannot exclude {warmup_steps} warmup steps.")
+            warmup_steps = 0
+
+        # Calculate statistics excluding warmup
+        if warmup_steps > 0:
+            times_after_warmup = self.iteration_times[warmup_steps:]
+            avg_time = sum(times_after_warmup) / len(times_after_warmup)
+            min_time = min(times_after_warmup)
+            max_time = max(times_after_warmup)
+        else:
+            avg_time = sum(self.iteration_times) / len(self.iteration_times)
+            min_time = min(self.iteration_times)
+            max_time = max(self.iteration_times)
+
+        # Print results
+        rank0_print("\n" + "="*60)
+        rank0_print("ACCURATE ITERATION TIMING STATISTICS")
+        rank0_print("="*60)
+        rank0_print(f"Total steps completed: {len(self.iteration_times)}")
+        rank0_print(f"Warmup steps excluded: {warmup_steps}")
+        rank0_print(f"Steps used for averaging: {len(self.iteration_times) - warmup_steps}")
+        rank0_print("-"*60)
+        rank0_print(f"Average iteration time (excluding warmup): {avg_time:.4f} seconds")
+        rank0_print(f"Min iteration time: {min_time:.4f} seconds")
+        rank0_print(f"Max iteration time: {max_time:.4f} seconds")
+        rank0_print(f"Steps per second: {1.0/avg_time:.4f}")
+        rank0_print("="*60 + "\n")
 
 
 def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: str):
