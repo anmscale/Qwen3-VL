@@ -41,6 +41,14 @@ data_dict = {
         "annotation_path": "/mnt/local_storage/data/mscoco2017/annotations/coco2017_val_qwen.json",
         "data_path": "/mnt/local_storage/data/mscoco2017",
     },
+    "laion_pop_train_captions": {
+        "annotation_path": "/mnt/local_storage/data/laion_pop/laion_pop_train.jsonl",
+        "data_path": "/mnt/local_storage/data/laion_pop/images",
+    },
+    "laion_pop_val_captions": {
+        "annotation_path": "/mnt/local_storage/data/laion_pop/laion_pop_val.jsonl",
+        "data_path": "/mnt/local_storage/data/laion_pop/images",
+    },
 }
 
 
