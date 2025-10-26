@@ -124,6 +124,7 @@ for config in "${CONFIGS[@]}"; do
         --gradient_accumulation_steps ${grad_accum_steps} \
         --max_pixels ${max_pixels} \
         --min_pixels ${min_pixels} \
+        --force_fixed_size True \
         --model_max_length ${model_max_length} \
         --eval_strategy no \
         --save_strategy no \

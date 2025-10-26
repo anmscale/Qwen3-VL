@@ -23,6 +23,7 @@ class DataArguments:
     video_max_pixels: int = field(default=1024 * 28 * 28)
     video_min_pixels: int = field(default=256 * 28 * 28)
     video_fps: float = 2
+    force_fixed_size: bool = field(default=False)
 
 
 @dataclass

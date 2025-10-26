@@ -202,6 +202,8 @@ def _build_messages(item: Dict[str, Any], base_path: Path) -> List[Dict[str, Any
 def preprocess_qwen_visual(
     sources,
     processor,
+    force_fixed_size=False,
+    max_pixels=28 * 28 * 576,
 ) -> Dict:
     if len(sources) != 1:
         raise ValueError(f"Expected 1 source, got {len(sources)}")
@@ -209,6 +211,23 @@ def preprocess_qwen_visual(
     source = sources[0]
     base_path = Path(source.get("data_path", ""))
     messages = _build_messages(source, base_path)
+
+    # Resize images to fixed size if requested (before any other processing)
+    if force_fixed_size:
+        import math
+        from PIL import Image
+
+        fixed_size = int(math.sqrt(max_pixels))
+        for message in messages:
+            if isinstance(message.get("content"), list):
+                for content_item in message["content"]:
+                    if content_item.get("type") == "image" and "image" in content_item:
+                        # Load and resize the image
+                        image_path = content_item["image"]
+                        img = Image.open(image_path).convert("RGB")
+                        img_resized = img.resize((fixed_size, fixed_size), Image.Resampling.BILINEAR)
+                        # Replace path with PIL Image object
+                        content_item["image"] = img_resized
 
     full_result = processor.apply_chat_template(
         messages, tokenize=True, return_dict=True, return_tensors="pt"
@@ -303,6 +322,8 @@ class LazySupervisedDataset(Dataset):
         self.data_args = data_args
         self.merge_size = getattr(processor.image_processor, "merge_size", 2)
         self.list_data_dict = list_data_dict
+        self.force_fixed_size = getattr(data_args, "force_fixed_size", False)
+        self.max_pixels = data_args.max_pixels
 
         if data_args.data_packing:
             self.item_fn = self._get_packed_item
@@ -393,6 +414,8 @@ class LazySupervisedDataset(Dataset):
         data_dict = preprocess_qwen_visual(
             sources,
             self.processor,
+            force_fixed_size=self.force_fixed_size,
+            max_pixels=self.max_pixels,
         )
 
         seq_len = data_dict["input_ids"][0].size(0)
