@@ -1,0 +1,20 @@
+Training Sweep Summary
+======================
+Started: 20251026_162832
+Completed: Sun Oct 26 16:41:09 PDT 2025
+
+Total configurations: 6
+Executed: 4
+Successful: 3
+Failed: 1
+Skipped: 2
+
+Configurations:
+Format: name | status | avg_iter_time (excl. warmup) | steps_per_sec
+--------------------------------------------------------------
+  1k_tokens: SUCCESS | 2.4422s | 0.4095 steps/s
+  4k_tokens: SUCCESS | 2.3915s | 0.4181 steps/s
+  8k_tokens: SUCCESS | 2.7508s | 0.3635 steps/s
+  16k_tokens: FAILED | N/As | N/A steps/s
+  32k_tokens: SKIPPED (OOM)
+  64k_tokens: SKIPPED (OOM)
