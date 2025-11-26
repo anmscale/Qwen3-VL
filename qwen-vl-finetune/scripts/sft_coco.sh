@@ -4,17 +4,18 @@
 # Distributed training configuration
 MASTER_ADDR=${MASTER_ADDR:-"127.0.0.1"}
 MASTER_PORT=${MASTER_PORT:-$(shuf -i 20001-29999 -n 1)}
-NPROC_PER_NODE=4
+NPROC_PER_NODE=8
 
 # DeepSpeed configuration
 deepspeed=./scripts/zero3.json
 
 # Model configuration
-llm=Qwen/Qwen2.5-VL-7B-Instruct  # Using HuggingFace model ID
+# llm=Qwen/Qwen2.5-VL-7B-Instruct  # Using HuggingFace model ID
+llm=Qwen/Qwen2.5-VL-32B-Instruct  # Using HuggingFace model ID
 
 # Training hyperparameters
 lr=2e-7
-batch_size=4
+batch_size=1
 grad_accum_steps=1
 
 # Training entry point
@@ -43,8 +44,9 @@ args="
     --per_device_train_batch_size ${batch_size} \
     --per_device_eval_batch_size $((batch_size*2)) \
     --gradient_accumulation_steps ${grad_accum_steps} \
-    --max_pixels 50176 \
-    --min_pixels 784 \
+    --max_pixels 3211264 \
+    --min_pixels 3211264 \
+    --model_max_length 8192 \
     --eval_strategy no \
     --save_strategy no \
     --learning_rate ${lr} \
@@ -53,11 +55,49 @@ args="
     --max_grad_norm 1 \
     --lr_scheduler_type cosine \
     --logging_steps 1 \
-    --model_max_length 8192 \
     --gradient_checkpointing True \
     --dataloader_num_workers 4 \
     --run_name ${run_name} \
     --report_to none"
+
+    # --max_pixels 50176 \
+    # --min_pixels 784 \
+    # --model_max_length 8192 \
+
+    # vision input: 1k tokens \
+    # --max_pixels 200704 \
+    # --min_pixels 200704 \
+    # --model_max_length 8192 \
+
+    # vision input: 2k tokens \
+    # --max_pixels 401408 \
+    # --min_pixels 401408 \
+    # --model_max_length 8192 \
+
+    # vision input: 4k tokens \
+    # --max_pixels 802816 \
+    # --min_pixels 802816 \
+    # --model_max_length 8192 \
+
+    # vision: 8k tokens \
+    # --max_pixels 1605632 \
+    # --min_pixels 1605632 \
+    # --model_max_length 8192 \
+    
+    # vision: 16k tokens | 32B OOM \
+    # --max_pixels 3211264 \
+    # --min_pixels 3211264 \
+    # --model_max_length 8192 \
+    
+    # vision: 32k tokens \
+    # --max_pixels 6422528 \
+    # --min_pixels 6422528 \
+    # --model_max_length 16384 \
+    
+    # vision: 64k tokens \
+    # --max_pixels 12845056 \
+    # --min_pixels 12845056 \
+    # --model_max_length 32768 \
 
 # Launch training
 torchrun --nproc_per_node=${NPROC_PER_NODE} \
